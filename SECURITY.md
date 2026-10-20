@@ -98,6 +98,16 @@ On macOS 27 and later, a Dock-owned window at layer 20 is enough to detect
 Mission Control; older systems keep the existing layer-18 requirement. This
 uses the same window metadata and adds no permissions or data collection.
 
+When **Drag-hover switch** is enabled (`Sources/strafe/DragHoverManager.swift`),
+strafe installs a passive `NSEvent` global mouse monitor for left-mouse drag
+events. It checks only `NSPasteboard(name: .drag).changeCount` (an integer
+counter) to tell a real system Drag & Drop session apart from ordinary mouse
+drags — pasteboard types and contents are never read. During an active drag, it
+uses the existing Accessibility permission (`AXUIElementCopyElementAtPosition`)
+and `CGWindowListCopyWindowInfo` (`strafe_window_at_point`) to activate a
+hovered Dock icon, in-app tab, or background window after the configured delay
+(0–200 ms).
+
 ---
 
 ## What strafe never does
@@ -150,17 +160,21 @@ Each of these is verifiable with a single grep over `Sources/`.
   (`grep -rniE 'Process\(\)|/usr/bin|/bin/|tccutil' Sources/` — no spawns).
 
 - **Persistence is limited to menu settings.** strafe stores no databases and no
-  caches. Its own code writes two `UserDefaults` values: `transitionSpeed`, an integer
+  caches. Its own code writes four `UserDefaults` values: `transitionSpeed`, an integer
   0–2 recording which **Transition speed** preset you picked in the menu
-  (`TransitionSpeed`, `Sources/strafe/TransitionSpeed.swift` line 101); and
+  (`TransitionSpeed`, `Sources/strafe/TransitionSpeed.swift` line 101);
   `spaceHotkeysEnabled`, a bool recording whether the Ctrl+Option+Left/Right
   **Space-switch hotkeys** toggle is on (`HotkeyManager`,
-  `Sources/strafe/HotkeyManager.swift`). Neither has any effect on what the
+  `Sources/strafe/HotkeyManager.swift`); and `dragHoverEnabled` /
+  `dragHoverDelayMs`, recording whether **Drag-hover switch** is enabled and
+  its dwell delay in milliseconds (`DragHoverManager`,
+  `Sources/strafe/DragHoverManager.swift`). None of these has any effect on what the
   gesture tap sees — the first changes the shape of the gesture strafe
   *posts*, the second only registers/unregisters a Carbon global hotkey (a
   separate mechanism from the tap, added so the hotkeys can be turned off
   independently if they conflict with a third-party shortcut bound to the
-  same chord).
+  same chord), and the drag-hover settings only configure the passive drag
+  monitor.
 
   Reads and writes go through one accessor, so the two launch modes
   (`strafe.app` and the bare CLI, which has no bundle id) cannot land in

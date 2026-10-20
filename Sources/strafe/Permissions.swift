@@ -29,10 +29,14 @@ enum Permissions {
         let ax = isAccessibilityGranted ? "yes" : "no"
         let tap = tapRunning ? "yes" : "no"
         let cgs = cgsAvailable ? "yes" : "no"
+        let drag = DragHoverManager.enabled
+            ? DragHoverDelay.describe(DragHoverManager.delayMs)
+            : "off"
         print("strafe status")
         print("  Accessibility granted: \(ax)")
         print("  Event tap running:     \(tap)")
         print("  CGS symbols resolved:  \(cgs)")
         print("  Transition speed:      \(TransitionSpeed.stored.title)")
+        print("  Drag-hover switch:     \(drag)")
     }
 }

@@ -69,6 +69,74 @@ final class BoundaryTests: XCTestCase {
         XCTAssertEqual(engine.attempts, 1)
     }
 
+    func testDragHoverDelayPresetsAndParsing() {
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("zero"), 0)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("instant"), 25)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("fast"), 75)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("quick"), 125)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("max"), 200)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("0"), 0)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("150"), 150)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("120ms"), 120)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("-25"), 0)
+        XCTAssertEqual(DragHoverDelay.parseMilliseconds("999"), 200)
+        XCTAssertNil(DragHoverDelay.parseMilliseconds("invalid"))
+    }
+
+    func testDragHoverPersistence() {
+        let prevEnabled = DragHoverManager.enabled
+        let prevDelay = DragHoverManager.delayMs
+        defer {
+            DragHoverManager.persist(enabled: prevEnabled)
+            DragHoverManager.persist(delayMs: prevDelay)
+        }
+
+        DragHoverManager.persist(enabled: false)
+        XCTAssertFalse(DragHoverManager.enabled)
+
+        DragHoverManager.persist(enabled: true)
+        DragHoverManager.persist(delayMs: 75)
+        XCTAssertTrue(DragHoverManager.enabled)
+        XCTAssertEqual(DragHoverManager.delayMs, 75)
+    }
+
+    @MainActor
+    func testDragHoverStateMachineActivatesOncePerTargetAndResetsOnDrop() {
+        var resolvedTarget: DragHoverManager.Target?
+        var activated: [DragHoverManager.Target] = []
+
+        let manager = DragHoverManager(
+            targetResolver: { _ in resolvedTarget },
+            targetActivator: { activated.append($0) }
+        )
+
+        let winA = DragHoverManager.Target.backgroundWindow(windowID: 10, pid: 100)
+        let winB = DragHoverManager.Target.backgroundWindow(windowID: 20, pid: 200)
+
+        manager.beginDragCandidate(at: CGPoint(x: 100, y: 100), startedOnTab: false, startPID: 0)
+        resolvedTarget = winA
+
+        // Settled movement at delayMs == 0 activates immediately once.
+        manager.handleDragMoved(to: CGPoint(x: 102, y: 100), delayMs: 0)
+        XCTAssertEqual(activated, [winA])
+
+        // Further movement on the same target does not re-trigger.
+        manager.handleDragMoved(to: CGPoint(x: 104, y: 100), delayMs: 0)
+        XCTAssertEqual(activated, [winA])
+
+        // Moving to a second target activates the second target.
+        resolvedTarget = winB
+        manager.handleDragMoved(to: CGPoint(x: 106, y: 100), delayMs: 0)
+        XCTAssertEqual(activated, [winA, winB])
+
+        // Ending the drag session resets state.
+        manager.endDragSession()
+        resolvedTarget = winB
+        manager.beginDragCandidate(at: CGPoint(x: 106, y: 100), startedOnTab: false, startPID: 0)
+        manager.handleDragMoved(to: CGPoint(x: 108, y: 100), delayMs: 0)
+        XCTAssertEqual(activated, [winA, winB, winB])
+    }
+
     private func event(_ phase: Int64) -> CGEvent {
         let event = CGEvent(source: nil)!
         event.setIntegerValueField(CGEventField(rawValue: 55)!, value: 30)

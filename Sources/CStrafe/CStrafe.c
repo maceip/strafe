@@ -57,6 +57,7 @@ extern CFArrayRef  CGSCopyManagedDisplaySpaces(CGSConnectionID connection, CFStr
 extern CFStringRef CGSCopyActiveMenuBarDisplayIdentifier(CGSConnectionID connection) __attribute__((weak_import));
 extern CGSConnectionID CGSMainConnectionID(void) __attribute__((weak_import));
 extern CGSSpaceID  CGSGetActiveSpace(CGSConnectionID connection) __attribute__((weak_import));
+extern AXError _AXUIElementGetWindow(AXUIElementRef element, CGWindowID *outWindow) __attribute__((weak_import));
 
 bool strafe_cgs_available(void) {
     return (&CGSMainConnectionID != NULL) &&
@@ -371,4 +372,100 @@ bool strafe_is_expose_active(void) {
         if (layer20Count > 0) { return true; }
     }
     return false;
+}
+
+// --- Drag-hover helpers ---------------------------------------------------
+CGPoint strafe_cursor_location(void) {
+    CGEventRef ev = CGEventCreate(NULL);
+    if (!ev) { return CGPointZero; }
+    CGPoint loc = CGEventGetLocation(ev);
+    CFRelease(ev);
+    return loc;
+}
+
+bool strafe_window_at_point(
+    CGPoint point,
+    uint32_t *outWindowID,
+    int32_t *outOwnerPID,
+    bool *outIsFrontmost
+) {
+    if (outWindowID)    { *outWindowID = 0; }
+    if (outOwnerPID)    { *outOwnerPID = 0; }
+    if (outIsFrontmost) { *outIsFrontmost = false; }
+
+    CFArrayRef windows = CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID
+    );
+    if (!windows) { return false; }
+
+    uint32_t firstNormalWindowID = 0;
+    uint32_t hitWindowID = 0;
+    int32_t  hitOwnerPID = 0;
+
+    CFIndex count = CFArrayGetCount(windows);
+    for (CFIndex i = 0; i < count; i++) {
+        CFDictionaryRef win = (CFDictionaryRef)CFArrayGetValueAtIndex(windows, i);
+        if (!win) { continue; }
+
+        CFNumberRef layerNum = (CFNumberRef)CFDictionaryGetValue(win, kCGWindowLayer);
+        int layer = 0;
+        if (layerNum) { CFNumberGetValue(layerNum, kCFNumberIntType, &layer); }
+        if (layer != 0) { continue; }
+
+        CFNumberRef alphaNum = (CFNumberRef)CFDictionaryGetValue(win, kCGWindowAlpha);
+        double alpha = 1.0;
+        if (alphaNum) { CFNumberGetValue(alphaNum, kCFNumberDoubleType, &alpha); }
+        if (alpha <= 0.01) { continue; }
+
+        CFDictionaryRef boundsDict = (CFDictionaryRef)CFDictionaryGetValue(win, kCGWindowBounds);
+        CGRect bounds = CGRectZero;
+        if (!boundsDict || !CGRectMakeWithDictionaryRepresentation(boundsDict, &bounds)) {
+            continue;
+        }
+        if (bounds.size.width < 48.0 || bounds.size.height < 48.0) {
+            continue;
+        }
+
+        CFNumberRef winIDNum = (CFNumberRef)CFDictionaryGetValue(win, kCGWindowNumber);
+        uint32_t winID = 0;
+        if (winIDNum) { CFNumberGetValue(winIDNum, kCFNumberSInt32Type, &winID); }
+        if (winID == 0) { continue; }
+
+        if (firstNormalWindowID == 0) {
+            firstNormalWindowID = winID;
+        }
+
+        if (CGRectContainsPoint(bounds, point)) {
+            CFNumberRef pidNum = (CFNumberRef)CFDictionaryGetValue(win, kCGWindowOwnerPID);
+            int32_t pid = 0;
+            if (pidNum) { CFNumberGetValue(pidNum, kCFNumberSInt32Type, &pid); }
+            hitWindowID = winID;
+            hitOwnerPID = pid;
+            break;
+        }
+    }
+
+    CFRelease(windows);
+
+    if (hitWindowID == 0 || hitOwnerPID <= 0) {
+        return false;
+    }
+
+    if (outWindowID)    { *outWindowID = hitWindowID; }
+    if (outOwnerPID)    { *outOwnerPID = hitOwnerPID; }
+    if (outIsFrontmost) { *outIsFrontmost = (hitWindowID == firstNormalWindowID); }
+    return true;
+}
+
+bool strafe_ax_window_id(AXUIElementRef element, uint32_t *outWindowID) {
+    if (!element || !outWindowID || &_AXUIElementGetWindow == NULL) {
+        return false;
+    }
+    CGWindowID winID = 0;
+    if (_AXUIElementGetWindow(element, &winID) != kAXErrorSuccess || winID == 0) {
+        return false;
+    }
+    *outWindowID = (uint32_t)winID;
+    return true;
 }

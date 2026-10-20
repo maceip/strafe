@@ -167,6 +167,13 @@ This update was tested on macOS 27.0; older macOS versions have not been reteste
   macOS's own animated switch — and that is already what you get with strafe
   turned off.
 
+- **Drag-hover switch** *(menu bar › Drag-hover switch)* — removes the ~1.3–2.0 s
+  macOS spring-loading delays when dragging a file or object onto a Dock
+  application icon, an in-app tab (Finder, Safari, Chrome/Chromium, Ghostty,
+  Xcode, etc.), or a background window. Presets range from **Zero (0 ms)** and
+  **Instant (25 ms, default)** through **Fast (75 ms)**, **Quick (125 ms)**, and
+  **Max (200 ms)**, or any integer millisecond value (`0..200`) via the CLI.
+
 - **Hide from menu bar** *(menu bar › Hide from menu bar)* — hide the strafe
   icon from the menu bar. The app keeps running: swipes and shortcuts still work.
   To get the icon back, open strafe again. The icon also returns on every fresh
@@ -174,11 +181,12 @@ This update was tested on macOS 27.0; older macOS versions have not been reteste
 - **CLI:**
 
   ```
-  strafe switch left|right   # switch once and exit
-  strafe status              # print accessibility / tap status
-  strafe speed [preset]      # show or set transition speed
-  strafe hotkeys [on|off]    # show or set Space-switch hotkeys
-  strafe                     # start the menu-bar app
+  strafe switch left|right        # switch once and exit
+  strafe status                   # print accessibility / tap status
+  strafe speed [preset]           # show or set transition speed
+  strafe hotkeys [on|off]         # show or set Space-switch hotkeys
+  strafe drag [on|off|preset|ms]  # show or set drag-hover switch delay (0..200 ms)
+  strafe                          # start the menu-bar app
   ```
 
 ## Permissions

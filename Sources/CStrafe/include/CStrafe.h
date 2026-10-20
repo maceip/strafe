@@ -107,6 +107,25 @@ uint64_t strafe_tap_event_mask(void);
 // True when App Exposé or Mission Control is up (Dock windows at layers 18/20).
 bool strafe_is_expose_active(void);
 
+// --- Drag-hover helpers ---------------------------------------------------
+// Current cursor location in global Quartz coordinates (origin at top-left of
+// primary display), matching CGWindowListCopyWindowInfo and Accessibility.
+CGPoint strafe_cursor_location(void);
+
+// Inspect the topmost visible normal-layer (layer == 0) window containing
+// `point`. Sets `*outIsFrontmost` to true iff the hit window is already the
+// frontmost normal window on screen.
+bool strafe_window_at_point(
+    CGPoint point,
+    uint32_t *outWindowID,
+    int32_t *outOwnerPID,
+    bool *outIsFrontmost
+);
+
+// Resolve the CGWindowID for an Accessibility AXWindow element via weak-linked
+// _AXUIElementGetWindow. Returns false if unavailable or not a window element.
+bool strafe_ax_window_id(AXUIElementRef element, uint32_t *outWindowID);
+
 #ifdef __cplusplus
 }
 #endif

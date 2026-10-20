@@ -9,6 +9,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let interceptor: SwipeInterceptor
     private let engine: GestureSwitchEngine?
     private let hotkeys: HotkeyManager?
+    private let dragHover: DragHoverManager?
 
     private let toggleItem = NSMenuItem(
         title: "Enable", action: #selector(toggleEnabled), keyEquivalent: ""
@@ -17,6 +18,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         title: "Transition speed", action: nil, keyEquivalent: ""
     )
     private var speedItems: [NSMenuItem] = []
+    private let dragHoverItem = NSMenuItem(
+        title: "Drag-hover switch", action: nil, keyEquivalent: ""
+    )
+    private let dragHoverToggleItem = NSMenuItem(
+        title: "Enable", action: #selector(toggleDragHover), keyEquivalent: ""
+    )
+    private var dragHoverDelayItems: [NSMenuItem] = []
     private let hotkeysItem = NSMenuItem(
         title: "Space-switch hotkeys (⌃⌥←/→)", action: #selector(toggleHotkeys), keyEquivalent: ""
     )
@@ -32,10 +40,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
-    init(interceptor: SwipeInterceptor, engine: GestureSwitchEngine? = nil, hotkeys: HotkeyManager? = nil) {
+    init(
+        interceptor: SwipeInterceptor,
+        engine: GestureSwitchEngine? = nil,
+        hotkeys: HotkeyManager? = nil,
+        dragHover: DragHoverManager? = nil
+    ) {
         self.interceptor = interceptor
         self.engine = engine
         self.hotkeys = hotkeys
+        self.dragHover = dragHover
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -60,6 +74,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(toggleItem)
         buildSpeedSubmenu(into: menu)
+        buildDragHoverSubmenu(into: menu)
         if hotkeys != nil {
             hotkeysItem.target = self
             menu.addItem(hotkeysItem)
@@ -122,6 +137,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(speedItem)
     }
 
+    private func buildDragHoverSubmenu(into menu: NSMenu) {
+        guard dragHover != nil else { return }
+
+        let submenu = NSMenu()
+        dragHoverToggleItem.target = self
+        submenu.addItem(dragHoverToggleItem)
+        submenu.addItem(.separator())
+
+        for preset in DragHoverDelay.allCases {
+            let item = NSMenuItem(
+                title: preset.title, action: #selector(selectDragHoverDelay(_:)), keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = preset.rawValue
+            submenu.addItem(item)
+            dragHoverDelayItems.append(item)
+        }
+
+        dragHoverItem.submenu = submenu
+        menu.addItem(dragHoverItem)
+    }
+
     // MARK: - NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -160,6 +197,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         refresh()
     }
 
+    @objc private func toggleDragHover() {
+        guard let dragHover else { return }
+        DragHoverManager.persist(enabled: !DragHoverManager.enabled)
+        dragHover.applyStoredState()
+        refresh()
+    }
+
+    @objc private func selectDragHoverDelay(_ sender: NSMenuItem) {
+        guard let dragHover else { return }
+        DragHoverManager.persist(delayMs: sender.tag)
+        DragHoverManager.persist(enabled: true)
+        dragHover.applyStoredState()
+        refresh()
+    }
+
     // AppKit saves visibility; initialization resets it on the next launch.
     @objc private func hideFromMenuBar() {
         let alert = NSAlert()
@@ -181,6 +233,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func quit() {
         interceptor.teardown()
+        dragHover?.stop()
         NSApp.terminate(nil)
     }
 
@@ -192,6 +245,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let current = engine.transitionSpeed
             speedItem.title = "Transition speed: \(current.title)"
             for item in speedItems { item.state = item.tag == current.rawValue ? .on : .off }
+        }
+        if dragHover != nil {
+            let isOn = DragHoverManager.enabled
+            let delay = DragHoverManager.delayMs
+            dragHoverItem.title = isOn
+                ? "Drag-hover switch: \(DragHoverDelay.describe(delay))"
+                : "Drag-hover switch: Off"
+            dragHoverToggleItem.state = isOn ? .on : .off
+            for item in dragHoverDelayItems {
+                item.state = (isOn && item.tag == delay) ? .on : .off
+            }
         }
         let granted = Permissions.isAccessibilityGranted
         accessibilityItem.title = "Accessibility granted: \(granted ? "yes" : "no")"

@@ -103,16 +103,48 @@ func runCLI(_ args: [String], engine: GestureSwitchEngine) -> Int32 {
         print("space-switch hotkeys: \(enabled ? "on" : "off")")
         return 0
 
+    case "drag":
+        guard args.count >= 2 else {
+            let isOn = DragHoverManager.enabled
+            let delay = DragHoverManager.delayMs
+            print("drag-hover switch: \(isOn ? "on" : "off") (\(DragHoverDelay.describe(delay)))")
+            let width = DragHoverDelay.allCases.map(\.name.count).max() ?? 0
+            for preset in DragHoverDelay.allCases {
+                let mark = (isOn && preset.rawValue == delay) ? "*" : " "
+                let pad = String(repeating: " ", count: width - preset.name.count)
+                print("  \(mark) \(preset.name)\(pad)  \(preset.title)")
+            }
+            return 0
+        }
+        let val = args[1].lowercased()
+        if val == "on" || val == "off" {
+            let enabled = (val == "on")
+            DragHoverManager.persist(enabled: enabled)
+            print("drag-hover switch: \(enabled ? "on (\(DragHoverDelay.describe(DragHoverManager.delayMs)))" : "off")")
+            return 0
+        }
+        guard let ms = DragHoverDelay.parseMilliseconds(val) else {
+            let names = DragHoverDelay.allCases.map(\.name).joined(separator: "|")
+            FileHandle.standardError.write(Data(
+                "unknown drag value '\(args[1])' (expected on|off|\(names)|0..200)\n".utf8))
+            return 2
+        }
+        DragHoverManager.persist(delayMs: ms)
+        DragHoverManager.persist(enabled: true)
+        print("drag-hover switch: on (\(DragHoverDelay.describe(DragHoverManager.delayMs)))")
+        return 0
+
     default:
         FileHandle.standardError.write(Data("""
         strafe — near-instant macOS Spaces switching
 
         usage:
-          strafe                      start the menu-bar app
-          strafe switch left|right    switch space once and exit
-          strafe status               print accessibility / tap status
-          strafe speed [preset]       show or set the swipe transition speed
-          strafe hotkeys [on|off]     show or set the ctrl+opt+arrow hotkeys
+          strafe                          start the menu-bar app
+          strafe switch left|right        switch space once and exit
+          strafe status                   print accessibility / tap status
+          strafe speed [preset]           show or set the swipe transition speed
+          strafe hotkeys [on|off]         show or set the ctrl+opt+arrow hotkeys
+          strafe drag [on|off|preset|ms]  show or set drag-hover switch delay (0..200 ms)
 
         """.utf8))
         return 2
@@ -138,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine: GestureSwitchEngine
     private var interceptor: SwipeInterceptor!
     private var hotkeys: HotkeyManager!
+    private var dragHover: DragHoverManager!
     private var statusItem: StatusItemController!
 
     init(engine: GestureSwitchEngine) {
@@ -154,7 +187,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys = HotkeyManager(engine: engine)
         hotkeys.start()
 
-        statusItem = StatusItemController(interceptor: interceptor, engine: engine, hotkeys: hotkeys)
+        dragHover = DragHoverManager()
+        dragHover.start()
+
+        statusItem = StatusItemController(
+            interceptor: interceptor,
+            engine: engine,
+            hotkeys: hotkeys,
+            dragHover: dragHover
+        )
 
         // SPEC §2.4 / §5: reset the prediction dictionary to live CGS data
         // whenever the OS reports a real space change, so rapid repeated swipes
@@ -179,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         interceptor?.teardown()
         hotkeys?.stop()
+        dragHover?.stop()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 }

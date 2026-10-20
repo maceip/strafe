@@ -50,6 +50,91 @@ static void check_overlay_detection(void) {
     check_overlay(CFSTR("Dock"), (int[]){20}, 1, modern);
 }
 
+static CFDictionaryRef make_window_dict(
+    CFStringRef owner,
+    int layer,
+    uint32_t winID,
+    int32_t pid,
+    CGRect bounds,
+    double alpha
+) {
+    CFNumberRef layerNum = CFNumberCreate(NULL, kCFNumberIntType, &layer);
+    CFNumberRef winIDNum = CFNumberCreate(NULL, kCFNumberSInt32Type, &winID);
+    CFNumberRef pidNum   = CFNumberCreate(NULL, kCFNumberSInt32Type, &pid);
+    CFNumberRef alphaNum = CFNumberCreate(NULL, kCFNumberDoubleType, &alpha);
+    CFDictionaryRef boundsDict = CGRectCreateDictionaryRepresentation(bounds);
+    const void *keys[] = {
+        kCGWindowOwnerName,
+        kCGWindowLayer,
+        kCGWindowNumber,
+        kCGWindowOwnerPID,
+        kCGWindowBounds,
+        kCGWindowAlpha
+    };
+    const void *values[] = {owner, layerNum, winIDNum, pidNum, boundsDict, alphaNum};
+    CFDictionaryRef dict = CFDictionaryCreate(
+        NULL, keys, values, 6,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks
+    );
+    CFRelease(layerNum);
+    CFRelease(winIDNum);
+    CFRelease(pidNum);
+    CFRelease(alphaNum);
+    CFRelease(boundsDict);
+    return dict;
+}
+
+static void check_window_at_point(void) {
+    CFMutableArrayRef windows = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+    assert(windows);
+    // 1. Fullscreen Dock window at layer 20 (macOS 27 layout) must be ignored
+    //    when locating normal (layer 0) windows.
+    CFDictionaryRef dockWin = make_window_dict(
+        CFSTR("Dock"), 20, 100, 300, CGRectMake(0, 0, 1496, 967), 1.0
+    );
+    // 2. Invisible normal window (alpha 0) must be skipped.
+    CFDictionaryRef hiddenWin = make_window_dict(
+        CFSTR("Hidden"), 0, 101, 301, CGRectMake(0, 0, 800, 600), 0.0
+    );
+    // 3. Frontmost normal window covering (0..500, 0..500).
+    CFDictionaryRef frontWin = make_window_dict(
+        CFSTR("Safari"), 0, 200, 400, CGRectMake(0, 0, 500, 500), 1.0
+    );
+    // 4. Background normal window covering (200..900, 200..900).
+    CFDictionaryRef backWin = make_window_dict(
+        CFSTR("Finder"), 0, 201, 401, CGRectMake(200, 200, 700, 700), 1.0
+    );
+    CFArrayAppendValue(windows, dockWin);
+    CFArrayAppendValue(windows, hiddenWin);
+    CFArrayAppendValue(windows, frontWin);
+    CFArrayAppendValue(windows, backWin);
+    CFRelease(dockWin);
+    CFRelease(hiddenWin);
+    CFRelease(frontWin);
+    CFRelease(backWin);
+
+    overlayWindows = windows;
+
+    uint32_t winID = 0;
+    int32_t pid = 0;
+    bool isFront = false;
+
+    // Point inside frontmost window: hits Safari (winID 200, isFront == true).
+    assert(strafe_window_at_point(CGPointMake(250, 250), &winID, &pid, &isFront));
+    assert(winID == 200 && pid == 400 && isFront);
+
+    // Point outside frontmost window but inside background window: hits Finder
+    // (winID 201, isFront == false).
+    assert(strafe_window_at_point(CGPointMake(700, 700), &winID, &pid, &isFront));
+    assert(winID == 201 && pid == 401 && !isFront);
+
+    // Point outside all normal windows: returns false.
+    assert(!strafe_window_at_point(CGPointMake(1200, 800), &winID, &pid, &isFront));
+
+    overlayWindows = NULL;
+    CFRelease(windows);
+}
+
 // Override the framework entry point in this test executable. Exercise the
 // real synthesizer without sending input to the user's desktop.
 void CGEventPost(CGEventTapLocation location, CGEventRef event) {
@@ -156,5 +241,6 @@ int main(void) {
     check_instant_switch(StrafeDirectionRight);
     check_instant_switch(StrafeDirectionLeft);
     check_overlay_detection();
+    check_window_at_point();
     puts("IOHID payload, direction, and overlay tests passed (no events posted)");
 }
